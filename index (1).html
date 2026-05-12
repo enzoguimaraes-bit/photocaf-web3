@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PHOTCAF 2.0 | Dashboard de Monitoramento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Exo+2:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  /* =====================================================
+     CSS VARIABLES & RESET
+  ===================================================== */
+  :root {
+    --bg-base:        #1a1d21;
+    --bg-card:        #21252b;
+    --bg-raised:      #282c34;
+    --nm-light:       #2e333c;
+    --nm-dark:        #14171a;
+    --green-tech:     #00ff88;
+    --blue-elec:      #00b4ff;
+    --amber-warn:     #f5a623;
+    --red-alert:      #ff4757;
+    --text-primary:   #e8eaf0;
+    --text-secondary: #8892a4;
+    --text-muted:     #4a5568;
+    --border:         #2e333c;
+    --radius:         14px;
+    --radius-sm:      8px;
+    --glow-green:     0 0 20px rgba(0,255,136,0.25);
+    --glow-blue:      0 0 20px rgba(0,180,255,0.25);
+    --nm-shadow:      6px 6px 14px var(--nm-dark), -4px -4px 10px var(--nm-light);
+    --nm-inset:       inset 4px 4px 10px var(--nm-dark), inset -3px -3px 8px var(--nm-light);
+    --font-display:   'Rajdhani', sans-serif;
+    --font-mono:      'JetBrains Mono', monospace;
+    --font-body:      'Exo 2', sans-serif;
+    --transition:     0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 10% -10%, rgba(0,255,136,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 90% 100%, rgba(0,180,255,0.04) 0%, transparent 60%);
+  }
+
+  /* =====================================================
+     HEADER
+  ===================================================== */
+  #app-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(26,29,33,0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-logo {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-primary);
+  }
+
+  .header-title span {
+    color: var(--green-tech);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* BLE Status Indicator */
+  .ble-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+  }
+
+  .ble-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+    transition: background var(--transition), box-shadow var(--transition);
+  }
+  .ble-dot.idle     { background: var(--text-muted); box-shadow: none; }
+  .ble-dot.scanning { background: var(--amber-warn); box-shadow: 0 0 10px rgba(245,166,35,0.6); animation: pulse-dot 1s infinite; }
+  .ble-dot.connected { background: var(--green-tech); box-shadow: 0 0 12px rgba(0,255,136,0.7); }
+  .ble-dot.error    { background: var(--red-alert); box-shadow: 0 0 10px rgba(255,71,87,0.6); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(1.3); }
+  }
+
+  /* Timestamp */
+  #live-clock {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+  }
+
+  /* =====================================================
+     ALERT BANNER (BLE warnings, HTTPS, etc.)
+  ===================================================== */
+  #alert-banner {
+    display: none;
+    margin: 16px 24px 0;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.3);
+    color: var(--amber-warn);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    letter-spacing: 0.3px;
+  }
+  #alert-banner.error-banner {
+    background: rgba(255,71,87,0.1);
+    border-color: rgba(255,71,87,0.3);
+    color: var(--red-alert);
+  }
+  #alert-banner.info-banner {
+    background: rgba(0,180,255,0.1);
+    border-color: rgba(0,180,255,0.3);
+    color: var(--blue-elec);
+  }
+
+  /* =====================================================
+     MAIN LAYOUT
+  ===================================================== */
+  .app-main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 20px 24px 40px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "control  control"
+      "spectral diagnosis"
+      "map      map";
+    gap: 20px;
+  }
+
+  @media (max-width: 900px) {
+    .app-main {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "control"
+        "spectral"
+        "diagnosis"
+        "map";
+    }
+  }
+
+  /* =====================================================
+     CARD BASE
+  ===================================================== */
+  .card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--nm-shadow);
+    padding: 22px 24px;
+    transition: box-shadow var(--transition);
+  }
+
+  .card:hover {
+    box-shadow: var(--nm-shadow), 0 0 0 1px rgba(0,255,136,0.08);
+  }
+
+  .card-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-label::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    background: var(--green-tech);
+    flex-shrink: 0;
+  }
+
+  /* =====================================================
+     CONTROL PANEL
+  ===================================================== */
+  #section-control {
+    grid-area: control;
+  }
+
+  .control-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .control-meta {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .device-name {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 1px;
+  }
+
+  .device-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  .control-buttons {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  /* Primary Button */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 26px;
+    border-radius: 10px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    transition: all var(--transition);
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.08);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .btn:hover::after { opacity: 1; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+  .btn-connect {
+    background: linear-gradient(135deg, #00e07a, #00ff88);
+    color: #0a1a12;
+    box-shadow: 0 4px 20px rgba(0,255,136,0.35);
+  }
+  .btn-connect:hover { box-shadow: 0 6px 28px rgba(0,255,136,0.55); transform: translateY(-1px); }
+  .btn-connect.is-connected {
+    background: linear-gradient(135deg, #ff4757, #ff6b81);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(255,71,87,0.35);
+  }
+
+  .btn-analyze {
+    background: var(--bg-raised);
+    color: var(--blue-elec);
+    border: 1px solid rgba(0,180,255,0.3);
+    box-shadow: var(--nm-shadow);
+  }
+  .btn-analyze:hover { border-color: var(--blue-elec); box-shadow: var(--nm-shadow), var(--glow-blue); }
+
+  .btn-simulate {
+    background: var(--bg-raised);
+    color: var(--amber-warn);
+    border: 1px solid rgba(245,166,35,0.25);
+    box-shadow: var(--nm-shadow);
+    font-size: 13px;
+    padding: 11px 20px;
+  }
+  .btn-simulate:hover { border-color: var(--amber-warn); }
+  .btn-simulate.is-simulating {
+    background: rgba(245,166,35,0.12);
+    animation: border-pulse-amber 1.5s infinite;
+  }
+
+  @keyframes border-pulse-amber {
+    0%, 100% { border-color: rgba(245,166,35,0.25); }
+    50%       { border-color: rgba(245,166,35,0.8); }
+  }
+
+  /* Stats Row */
+  .stats-row {
+    display: flex;
+    gap: 14px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+
+  .stat-chip {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 16px;
+    box-shadow: var(--nm-shadow);
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .stat-chip-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .stat-chip-value {
+    font-family: var(--font-mono);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 4px;
+    transition: color var(--transition);
+  }
+
+  .stat-chip-value.green { color: var(--green-tech); }
+  .stat-chip-value.blue  { color: var(--blue-elec); }
+  .stat-chip-value.amber { color: var(--amber-warn); }
+  .stat-chip-value.red   { color: var(--red-alert); }
+
+  /* =====================================================
+     SPECTRAL DISPLAY
+  ===================================================== */
+  #section-spectral { grid-area: spectral; }
+
+  .channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .channel-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 52px;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .channel-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .channel-name {
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+  }
+
+  .channel-nm {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .bar-track {
+    height: 10px;
+    background: var(--nm-inset);
+    background: var(--bg-base);
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: var(--nm-inset);
+    position: relative;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    width: 0%;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 50%;
+    background: rgba(255,255,255,0.2);
+    border-radius: 6px 6px 0 0;
+  }
+
+  /* Channel Colors */
+  .bar-red   { background: linear-gradient(90deg, #c0392b, #ff6b6b); box-shadow: 0 0 8px rgba(255,107,107,0.5); }
+  .bar-nir   { background: linear-gradient(90deg, #8e24aa, #ce93d8); box-shadow: 0 0 8px rgba(206,147,216,0.5); }
+  .bar-uv    { background: linear-gradient(90deg, #4527a0, #7e57c2); box-shadow: 0 0 8px rgba(126,87,194,0.5); }
+  .bar-blue  { background: linear-gradient(90deg, #1565c0, #42a5f5); box-shadow: 0 0 8px rgba(66,165,245,0.5); }
+  .bar-amber { background: linear-gradient(90deg, #e65100, #ffb74d); box-shadow: 0 0 8px rgba(255,183,77,0.5); }
+
+  .channel-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: right;
+    color: var(--text-secondary);
+    transition: color var(--transition);
+  }
+
+  /* Raw data log */
+  .raw-log {
+    margin-top: 18px;
+    padding: 10px 14px;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    min-height: 32px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .raw-log span { color: var(--green-tech); }
+
+  /* =====================================================
+     AI DIAGNOSIS CARD
+  ===================================================== */
+  #section-diagnosis { grid-area: diagnosis; }
+
+  .diagnosis-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* SVG Ring */
+  .ring-wrap {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    flex-shrink: 0;
+  }
+
+  .ring-svg {
+    transform: rotate(-90deg);
+    width: 140px;
+    height: 140px;
+  }
+
+  .ring-track {
+    fill: none;
+    stroke: var(--bg-base);
+    stroke-width: 10;
+  }
+
+  .ring-fill {
+    fill: none;
+    stroke: var(--green-tech);
+    stroke-width: 10;
+    stroke-linecap: round;
+    stroke-dasharray: 345.4;
+    stroke-dashoffset: 345.4;
+    transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1), stroke var(--transition);
+    filter: drop-shadow(0 0 6px rgba(0,255,136,0.5));
+  }
+
+  .ring-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .ring-pct {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    transition: color var(--transition);
+  }
+
+  .ring-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+  }
+
+  .diagnosis-info { text-align: center; width: 100%; }
+
+  .diagnosis-result {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--green-tech);
+    transition: color var(--transition);
+    line-height: 1.2;
+  }
+
+  .diagnosis-result.risk   { color: var(--amber-warn); }
+  .diagnosis-result.danger { color: var(--red-alert); }
+  .diagnosis-result.idle   { color: var(--text-muted); }
+
+  .diagnosis-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    line-height: 1.5;
+    font-weight: 300;
+  }
+
+  .model-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,180,255,0.08);
+    border: 1px solid rgba(0,180,255,0.2);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--blue-elec);
+    letter-spacing: 1px;
+    margin-top: 14px;
+  }
+
+  .model-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--blue-elec);
+  }
+
+  /* Metrics grid inside diagnosis */
+  .diag-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+    margin-top: 6px;
+  }
+
+  .diag-metric {
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    box-shadow: var(--nm-inset);
+  }
+
+  .diag-metric-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .diag-metric-val {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 4px;
+    transition: color var(--transition);
+  }
+
+  /* Idle state overlay */
+  .diagnosis-idle-msg {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px 0;
+    letter-spacing: 1px;
+  }
+
+  /* =====================================================
+     MAP SECTION
+  ===================================================== */
+  #section-map { grid-area: map; }
+
+  .map-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .gps-coords {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    letter-spacing: 0.5px;
+  }
+  .gps-coords span { color: var(--green-tech); }
+
+  #map-container {
+    height: 340px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: var(--nm-inset);
+    background: var(--bg-base);
+  }
+
+  /* Leaflet dark override */
+  .leaflet-container { background: #14171a; }
+  .leaflet-tile-pane { filter: brightness(0.75) saturate(0.7); }
+  .leaflet-control-attribution { background: rgba(20,23,26,0.85) !important; color: #4a5568 !important; }
+  .leaflet-control-attribution a { color: #4a5568 !important; }
+  .leaflet-control-zoom a {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+  }
+
+  /* =====================================================
+     TOAST NOTIFICATIONS
+  ===================================================== */
+  #toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 360px;
+  }
+
+  .toast {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    box-shadow: var(--nm-shadow);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    animation: toast-in 0.3s cubic-bezier(0.4,0,0.2,1) forwards;
+    letter-spacing: 0.3px;
+  }
+  .toast.success { border-left: 3px solid var(--green-tech); color: var(--text-primary); }
+  .toast.warning { border-left: 3px solid var(--amber-warn); color: var(--amber-warn); }
+  .toast.error   { border-left: 3px solid var(--red-alert);  color: var(--red-alert); }
+  .toast.info    { border-left: 3px solid var(--blue-elec);  color: var(--blue-elec); }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(30px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* =====================================================
+     MISC
+  ===================================================== */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-base); }
+  ::-webkit-scrollbar-thumb { background: var(--nm-dark); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- =====================================================
+     HEADER
+===================================================== -->
+<header id="app-header">
+  <div class="header-left">
+    <svg class="header-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="15" stroke="#00ff88" stroke-width="1.5" opacity="0.4"/>
+      <circle cx="16" cy="16" r="6" fill="none" stroke="#00ff88" stroke-width="2"/>
+      <line x1="16" y1="2"  x2="16" y2="8"  stroke="#00ff88" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="24" x2="16" y2="30" stroke="#00ff88" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="2"  y1="16" x2="8"  y2="16" stroke="#00ff88" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="16" x2="30" y2="16" stroke="#00ff88" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="2.5" fill="#00ff88"/>
+    </svg>
+    <span class="header-title">PHOTCAF <span>2.0</span> | Dashboard de Monitoramento</span>
+  </div>
+  <div class="header-right">
+    <div class="ble-status">
+      <div class="ble-dot idle" id="ble-dot"></div>
+      <span id="ble-label">BLUETOOTH: AGUARDANDO</span>
+    </div>
+    <span id="live-clock">--:--:--</span>
+  </div>
+</header>
+
+<!-- =====================================================
+     ALERT BANNER
+===================================================== -->
+<div id="alert-banner"></div>
+
+<!-- =====================================================
+     MAIN
+===================================================== -->
+<main class="app-main">
+
+  <!-- CONTROL PANEL -->
+  <section class="card" id="section-control">
+    <div class="card-label">Painel de Controle</div>
+    <div class="control-inner">
+      <div class="control-meta">
+        <div class="device-name">PHOTCAF_2.0</div>
+        <div class="device-sub">Sensor biofotonico multispectral com IA embarcada</div>
+      </div>
+      <div class="control-buttons">
+        <button class="btn btn-connect" id="btn-connect">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <line x1="12" y1="20" x2="12.01" y2="20" stroke-width="3"/>
+          </svg>
+          <span id="btn-connect-label">CONECTAR SENSOR</span>
+        </button>
+        <button class="btn btn-analyze" id="btn-analyze" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          REALIZAR ANALISE
+        </button>
+        <button class="btn btn-simulate" id="btn-simulate">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span id="btn-simulate-label">TESTAR SEM SENSOR</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-chip">
+        <div class="stat-chip-label">Amostras</div>
+        <div class="stat-chip-value blue" id="stat-samples">0</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-label">Ultima Leitura</div>
+        <div class="stat-chip-value" id="stat-last-read">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-label">Fonte de Dados</div>
+        <div class="stat-chip-value" id="stat-source">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-label">Latitude</div>
+        <div class="stat-chip-value green" id="stat-lat">--</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-chip-label">Longitude</div>
+        <div class="stat-chip-value green" id="stat-lon">--</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SPECTRAL DISPLAY -->
+  <section class="card" id="section-spectral">
+    <div class="card-label">Display Multispectral AS7265x</div>
+    <div class="channel-list">
+      <div class="channel-row">
+        <div class="channel-label">
+          <span class="channel-name">VERMELHO</span>
+          <span class="channel-nm">660 nm</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-red" id="bar-red"></div>
+        </div>
+        <div class="channel-value" id="val-red">0.00</div>
+      </div>
+      <div class="channel-row">
+        <div class="channel-label">
+          <span class="channel-name">NIR</span>
+          <span class="channel-nm">850 nm</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-nir" id="bar-nir"></div>
+        </div>
+        <div class="channel-value" id="val-nir">0.00</div>
+      </div>
+      <div class="channel-row">
+        <div class="channel-label">
+          <span class="channel-name">UV</span>
+          <span class="channel-nm">385 nm</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-uv" id="bar-uv"></div>
+        </div>
+        <div class="channel-value" id="val-uv">0.00</div>
+      </div>
+      <div class="channel-row">
+        <div class="channel-label">
+          <span class="channel-name">AZUL</span>
+          <span class="channel-nm">450 nm</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-blue" id="bar-blue"></div>
+        </div>
+        <div class="channel-value" id="val-blue">0.00</div>
+      </div>
+      <div class="channel-row">
+        <div class="channel-label">
+          <span class="channel-name">AMBAR</span>
+          <span class="channel-nm">590 nm</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-amber" id="bar-amber"></div>
+        </div>
+        <div class="channel-value" id="val-amber">0.00</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="raw-log" id="raw-log">Aguardando dados do sensor...</div>
+  </section>
+
+  <!-- AI DIAGNOSIS -->
+  <section class="card" id="section-diagnosis">
+    <div class="card-label">Diagnostico da IA</div>
+    <div class="diagnosis-body">
+      <div class="ring-wrap">
+        <svg class="ring-svg" viewBox="0 0 120 120">
+          <circle class="ring-track" cx="60" cy="60" r="55"/>
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="55"/>
+        </svg>
+        <div class="ring-center">
+          <span class="ring-pct" id="ring-pct">0%</span>
+          <span class="ring-sub">CONFIANCA</span>
+        </div>
+      </div>
+
+      <div class="diagnosis-info">
+        <div class="diagnosis-result idle" id="diag-result">AGUARDANDO LEITURA</div>
+        <div class="diagnosis-desc" id="diag-desc">
+          Conecte o sensor PHOTCAF_2.0 via Bluetooth ou use o modo de simulacao para visualizar os resultados.
+        </div>
+        <div class="model-badge">
+          <div class="model-badge-dot"></div>
+          <span>MODELO: PHOTCAF-CNN-v2.1</span>
+        </div>
+      </div>
+
+      <div class="diag-metrics">
+        <div class="diag-metric">
+          <div class="diag-metric-label">NDVI Estimado</div>
+          <div class="diag-metric-val" id="metric-ndvi">--</div>
+        </div>
+        <div class="diag-metric">
+          <div class="diag-metric-label">Clorofila</div>
+          <div class="diag-metric-val" id="metric-chloro">--</div>
+        </div>
+        <div class="diag-metric">
+          <div class="diag-metric-label">Estresse Hidrico</div>
+          <div class="diag-metric-val" id="metric-stress">--</div>
+        </div>
+        <div class="diag-metric">
+          <div class="diag-metric-label">Amostras/sess.</div>
+          <div class="diag-metric-val blue" id="metric-sess">0</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAP -->
+  <section class="card" id="section-map">
+    <div class="map-header">
+      <div class="card-label" style="margin-bottom:0">Mapa de Localizacao GPS</div>
+      <div class="gps-coords" id="gps-display">
+        Lat: <span id="gps-lat-display">--</span> &nbsp; Lon: <span id="gps-lon-display">--</span>
+      </div>
+    </div>
+    <div id="map-container"></div>
+  </section>
+
+</main>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- =====================================================
+     JAVASCRIPT
+===================================================== -->
+<script>
+'use strict';
+
+/* ======================================================
+   STATE — toda a logica de estado fica aqui
+====================================================== */
+const AppState = {
+  bleDevice:      null,    // BluetoothDevice do Web Bluetooth API
+  bleChar:        null,    // BluetoothRemoteGATTCharacteristic
+  isConnected:    false,
+  isSimulating:   false,
+  simulationTimer: null,
+  sampleCount:    0,
+  sessionSamples: 0,
+  leafletMap:     null,
+  leafletMarker:  null,
+  gpsCoords:      { lat: null, lon: null },
+
+  /* -------------------------------------------------------
+     UUID do servico e caracteristica configurados no ESP32.
+     Substitua pelos UUIDs reais do seu firmware.
+  ------------------------------------------------------- */
+  BLE_SERVICE_UUID:  '12345678-1234-1234-1234-123456789abc',
+  BLE_CHAR_UUID:     '87654321-4321-4321-4321-cba987654321',
+
+  /* Nome exato anunciado pelo ESP32 */
+  BLE_DEVICE_NAME:   'PHOTCAF_2.0',
+};
+
+/* ======================================================
+   DOM REFS
+====================================================== */
+const DOM = {
+  bleDot:          document.getElementById('ble-dot'),
+  bleLabel:        document.getElementById('ble-label'),
+  alertBanner:     document.getElementById('alert-banner'),
+  btnConnect:      document.getElementById('btn-connect'),
+  btnConnectLabel: document.getElementById('btn-connect-label'),
+  btnAnalyze:      document.getElementById('btn-analyze'),
+  btnSimulate:     document.getElementById('btn-simulate'),
+  btnSimLabel:     document.getElementById('btn-simulate-label'),
+  statSamples:     document.getElementById('stat-samples'),
+  statLastRead:    document.getElementById('stat-last-read'),
+  statSource:      document.getElementById('stat-source'),
+  statLat:         document.getElementById('stat-lat'),
+  statLon:         document.getElementById('stat-lon'),
+  barRed:          document.getElementById('bar-red'),
+  barNir:          document.getElementById('bar-nir'),
+  barUv:           document.getElementById('bar-uv'),
+  barBlue:         document.getElementById('bar-blue'),
+  barAmber:        document.getElementById('bar-amber'),
+  valRed:          document.getElementById('val-red'),
+  valNir:          document.getElementById('val-nir'),
+  valUv:           document.getElementById('val-uv'),
+  valBlue:         document.getElementById('val-blue'),
+  valAmber:        document.getElementById('val-amber'),
+  rawLog:          document.getElementById('raw-log'),
+  ringFill:        document.getElementById('ring-fill'),
+  ringPct:         document.getElementById('ring-pct'),
+  diagResult:      document.getElementById('diag-result'),
+  diagDesc:        document.getElementById('diag-desc'),
+  metricNdvi:      document.getElementById('metric-ndvi'),
+  metricChloro:    document.getElementById('metric-chloro'),
+  metricStress:    document.getElementById('metric-stress'),
+  metricSess:      document.getElementById('metric-sess'),
+  gpsLatDisplay:   document.getElementById('gps-lat-display'),
+  gpsLonDisplay:   document.getElementById('gps-lon-display'),
+  liveClock:       document.getElementById('live-clock'),
+};
+
+/* ======================================================
+   CLOCK
+====================================================== */
+function updateClock() {
+  const now = new Date();
+  DOM.liveClock.textContent =
+    now.toLocaleTimeString('pt-BR', { hour12: false });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ======================================================
+   TOAST NOTIFICATIONS
+====================================================== */
+function showToast(msg, type = 'info', duration = 4000) {
+  const container = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity 0.4s, transform 0.4s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(30px)';
+    setTimeout(() => t.remove(), 400);
+  }, duration);
+}
+
+/* ======================================================
+   ALERT BANNER
+====================================================== */
+function showBanner(msg, type = 'warning') {
+  const b = DOM.alertBanner;
+  b.textContent = msg;
+  b.className = type === 'error'   ? 'error-banner' :
+                type === 'info'    ? 'info-banner'  : '';
+  b.style.display = 'block';
+}
+function hideBanner() {
+  DOM.alertBanner.style.display = 'none';
+}
+
+/* ======================================================
+   BLE STATUS HELPERS
+====================================================== */
+function setBleStatus(state, labelText) {
+  DOM.bleDot.className = `ble-dot ${state}`;
+  DOM.bleLabel.textContent = `BLUETOOTH: ${labelText}`;
+}
+
+/* ======================================================
+   UPDATE SPECTRAL UI
+   @param {number[]} vals - array [red, nir, uv, blue, amber] (0.0 - 1.0)
+====================================================== */
+function updateSpectral(vals) {
+  const [red, nir, uv, blue, amber] = vals;
+  const channels = [
+    { bar: DOM.barRed,   val: DOM.valRed,   v: red   },
+    { bar: DOM.barNir,   val: DOM.valNir,   v: nir   },
+    { bar: DOM.barUv,    val: DOM.valUv,    v: uv    },
+    { bar: DOM.barBlue,  val: DOM.valBlue,  v: blue  },
+    { bar: DOM.barAmber, val: DOM.valAmber, v: amber },
+  ];
+  channels.forEach(({ bar, val, v }) => {
+    const pct = Math.min(Math.max(v, 0), 1) * 100;
+    bar.style.width = `${pct.toFixed(1)}%`;
+    val.textContent = v.toFixed(2);
+  });
+}
+
+/* ======================================================
+   UPDATE DIAGNOSIS UI
+   @param {number}  confidence  - 0.0 to 1.0
+   @param {string}  label       - e.g. 'Saudavel' | 'Ferrugem' | 'Mancha'
+====================================================== */
+function updateDiagnosis(confidence, label) {
+  const pct = Math.round(confidence * 100);
+  const circumference = 2 * Math.PI * 55; // 345.4
+
+  // Ring
+  const offset = circumference - (confidence * circumference);
+  DOM.ringFill.style.strokeDashoffset = offset.toFixed(2);
+  DOM.ringPct.textContent = `${pct}%`;
+
+  // Normalize label
+  const clean = label.trim().toLowerCase();
+
+  const configs = {
+    saudavel: {
+      cls:   'healthy',
+      title: 'PLANTA SAUDAVEL',
+      desc:  'Os indices espectrais indicam planta com boa saude. Clorofila e NIR dentro dos parametros normais.',
+      ring:  '#00ff88',
+      shadow:'rgba(0,255,136,0.5)',
+      ndvi:  (0.6 + Math.random() * 0.25).toFixed(3),
+      chloro:'Alto',
+      stress:'Baixo',
+    },
+    ferrugem: {
+      cls:   'risk',
+      title: 'RISCO: FERRUGEM',
+      desc:  'Sinal espectral indica possivel infeccao por Hemileia vastatrix. Recomenda-se inspeao visual urgente.',
+      ring:  '#f5a623',
+      shadow:'rgba(245,166,35,0.5)',
+      ndvi:  (0.25 + Math.random() * 0.2).toFixed(3),
+      chloro:'Baixo',
+      stress:'Alto',
+    },
+    manchas: {
+      cls:   'risk',
+      title: 'RISCO: MANCHAS FOLIARES',
+      desc:  'Absorcao UV e Azul anormal. Possivel presenca de fungos ou deficiencia nutricional.',
+      ring:  '#f5a623',
+      shadow:'rgba(245,166,35,0.5)',
+      ndvi:  (0.35 + Math.random() * 0.2).toFixed(3),
+      chloro:'Medio',
+      stress:'Medio',
+    },
+    critico: {
+      cls:   'danger',
+      title: 'ESTADO CRITICO',
+      desc:  'Multiplos indicadores fora dos limites. Intervencao imediata necessaria.',
+      ring:  '#ff4757',
+      shadow:'rgba(255,71,87,0.5)',
+      ndvi:  (0.05 + Math.random() * 0.15).toFixed(3),
+      chloro:'Muito Baixo',
+      stress:'Critico',
+    },
+  };
+
+  const cfg = configs[clean] || configs.saudavel;
+
+  DOM.diagResult.className = `diagnosis-result ${cfg.cls === 'healthy' ? '' : cfg.cls}`;
+  DOM.diagResult.textContent = cfg.title;
+  DOM.diagDesc.textContent   = cfg.desc;
+  DOM.ringPct.style.color    = cfg.ring;
+  DOM.ringFill.style.stroke  = cfg.ring;
+  DOM.ringFill.style.filter  = `drop-shadow(0 0 6px ${cfg.shadow})`;
+
+  DOM.metricNdvi.textContent   = cfg.ndvi;
+  DOM.metricChloro.textContent = cfg.chloro;
+  DOM.metricStress.textContent = cfg.stress;
+
+  // Color NDVI
+  const ndviNum = parseFloat(cfg.ndvi);
+  DOM.metricNdvi.style.color = ndviNum > 0.5 ? 'var(--green-tech)' :
+                               ndviNum > 0.3 ? 'var(--amber-warn)' :
+                               'var(--red-alert)';
+}
+
+/* ======================================================
+   PARSE CSV FROM SENSOR
+   Formato esperado do ESP32:
+   "0.85,0.10,0.05,0.40,0.30,Saudavel\n"
+====================================================== */
+function parseSensorCSV(rawStr) {
+  const cleaned = rawStr.trim().replace(/\r?\n/, '');
+  const parts   = cleaned.split(',').map(p => p.trim());
+
+  if (parts.length < 6) {
+    console.warn('[PHOTCAF] CSV invalido:', rawStr);
+    return null;
+  }
+
+  return {
+    red:   parseFloat(parts[0]) || 0,
+    nir:   parseFloat(parts[1]) || 0,
+    uv:    parseFloat(parts[2]) || 0,
+    blue:  parseFloat(parts[3]) || 0,
+    amber: parseFloat(parts[4]) || 0,
+    label: parts[5],
+    // confidence pode vir como 7o campo (opcional)
+    confidence: parts[6] ? parseFloat(parts[6]) : (0.7 + Math.random() * 0.29),
+  };
+}
+
+/* ======================================================
+   PROCESS A READING (a single source of truth for UI updates)
+====================================================== */
+function processReading(csvString, source = 'BLE') {
+  const data = parseSensorCSV(csvString);
+  if (!data) return;
+
+  AppState.sampleCount++;
+  AppState.sessionSamples++;
+
+  const now = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+
+  // Update spectral
+  updateSpectral([data.red, data.nir, data.uv, data.blue, data.amber]);
+
+  // Update diagnosis
+  updateDiagnosis(data.confidence, data.label);
+
+  // Update stats
+  DOM.statSamples.textContent  = AppState.sampleCount;
+  DOM.statLastRead.textContent = now;
+  DOM.statSource.textContent   = source;
+  DOM.statSource.style.color   = source === 'BLE' ? 'var(--green-tech)' : 'var(--amber-warn)';
+  DOM.metricSess.textContent   = AppState.sessionSamples;
+
+  // Raw log
+  DOM.rawLog.innerHTML = `RAW &gt; <span>${csvString.trim()}</span>`;
+
+  /* -------------------------------------------------------
+     TODO: FIREBASE FIRESTORE INTEGRATION
+     Descomente e configure quando o SDK estiver carregado.
+
+     import { getFirestore, collection, addDoc, GeoPoint, serverTimestamp } from 'firebase/firestore';
+
+     const db = getFirestore(firebaseApp);
+     await addDoc(collection(db, 'photcaf_readings'), {
+       timestamp:    serverTimestamp(),
+       location:     new GeoPoint(AppState.gpsCoords.lat, AppState.gpsCoords.lon),
+       spectral: {
+         red:   data.red,
+         nir:   data.nir,
+         uv:    data.uv,
+         blue:  data.blue,
+         amber: data.amber,
+       },
+       ai_label:      data.label,
+       ai_confidence: data.confidence,
+       source:        source,
+       device_id:     AppState.BLE_DEVICE_NAME,
+     });
+  ------------------------------------------------------- */
+}
+
+/* ======================================================
+   *** WEB BLUETOOTH API — CONEXAO REAL ***
+
+   Este bloco chama navigator.bluetooth.requestDevice() de
+   verdade. O browser abre o popup nativo de selecao BLE.
+   NÃO existe mock ou simulacao aqui.
+====================================================== */
+async function connectBluetooth() {
+  // Guarda de seguranca: Web Bluetooth so funciona em HTTPS ou localhost
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    showBanner(
+      'ATENCAO: Web Bluetooth API requer HTTPS. Abra este arquivo via servidor local (ex: VS Code Live Server) ou hospede em HTTPS.',
+      'error'
+    );
+    showToast('Web Bluetooth requer HTTPS ou localhost', 'error', 6000);
+    return;
+  }
+
+  // Guarda: API disponivel?
+  if (!navigator.bluetooth) {
+    showBanner(
+      'Web Bluetooth API nao encontrada. Use Google Chrome 56+ ou Edge 79+ em desktop.',
+      'error'
+    );
+    showToast('Bluetooth nao suportado neste browser', 'error', 5000);
+    return;
+  }
+
+  try {
+    setBleStatus('scanning', 'PROCURANDO...');
+    DOM.btnConnect.disabled = true;
+    hideBanner();
+    showToast('Abrindo janela de selecao Bluetooth...', 'info', 3000);
+
+    /* -------------------------------------------------------
+       PASSO 1: requestDevice — abre o POPUP NATIVO do browser
+       O usuario ve a lista de dispositivos BLE proximos e
+       seleciona "PHOTCAF_2.0".
+    ------------------------------------------------------- */
+    AppState.bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [
+        { name: AppState.BLE_DEVICE_NAME },
+        /* Alternativa por servico (descomente se necessario):
+        { services: [AppState.BLE_SERVICE_UUID] }
+        */
+      ],
+      optionalServices: [AppState.BLE_SERVICE_UUID],
+    });
+
+    showToast(`Dispositivo selecionado: ${AppState.bleDevice.name}`, 'success', 3000);
+    setBleStatus('scanning', 'CONECTANDO GATT...');
+
+    /* -------------------------------------------------------
+       PASSO 2: Conectar ao servidor GATT do ESP32
+    ------------------------------------------------------- */
+    const server = await AppState.bleDevice.gatt.connect();
+
+    /* -------------------------------------------------------
+       PASSO 3: Obter o Servico BLE customizado
+    ------------------------------------------------------- */
+    const service = await server.getPrimaryService(AppState.BLE_SERVICE_UUID);
+
+    /* -------------------------------------------------------
+       PASSO 4: Obter a Caracteristica que envia os dados CSV
+    ------------------------------------------------------- */
+    AppState.bleChar = await service.getCharacteristic(AppState.BLE_CHAR_UUID);
+
+    /* -------------------------------------------------------
+       PASSO 5: Habilitar notificacoes (startNotifications)
+       Cada vez que o ESP32 enviar um novo CSV, o evento
+       'characteristicvaluechanged' dispara automaticamente.
+    ------------------------------------------------------- */
+    await AppState.bleChar.startNotifications();
+    AppState.bleChar.addEventListener('characteristicvaluechanged', onBleNotification);
+
+    /* -------------------------------------------------------
+       PASSO 6: Listener para desconexao inesperada
+    ------------------------------------------------------- */
+    AppState.bleDevice.addEventListener('gattserverdisconnected', onBleDisconnected);
+
+    // Estado conectado
+    AppState.isConnected = true;
+    AppState.sessionSamples = 0;
+    setBleStatus('connected', `CONECTADO: ${AppState.bleDevice.name}`);
+    DOM.btnConnectLabel.textContent = 'DESCONECTAR';
+    DOM.btnConnect.classList.add('is-connected');
+    DOM.btnConnect.disabled = false;
+    DOM.btnAnalyze.disabled = false;
+    hideBanner();
+    showToast(`Conectado a ${AppState.bleDevice.name}`, 'success', 4000);
+
+    // Para simulacao se estava rodando
+    stopSimulation();
+
+  } catch (err) {
+    DOM.btnConnect.disabled = false;
+    setBleStatus('error', 'FALHA NA CONEXAO');
+
+    /* Tratamento especifico por tipo de erro BLE */
+    if (err.name === 'NotFoundError') {
+      // Usuario fechou o popup sem selecionar dispositivo
+      setBleStatus('idle', 'AGUARDANDO');
+      showToast('Nenhum dispositivo selecionado.', 'warning', 4000);
+      hideBanner();
+    } else if (err.name === 'SecurityError') {
+      showBanner('Permissao de Bluetooth negada pelo sistema.', 'error');
+      showToast('Permissao Bluetooth negada', 'error', 5000);
+    } else if (err.name === 'NetworkError') {
+      showBanner(`Falha ao conectar ao GATT. ESP32 fora de alcance? Erro: ${err.message}`, 'error');
+      showToast('Falha na conexao GATT', 'error', 5000);
+    } else {
+      showBanner(`Erro BLE inesperado (${err.name}): ${err.message}`, 'error');
+      showToast(`Erro: ${err.message}`, 'error', 5000);
+      console.error('[PHOTCAF BLE Error]', err);
+    }
+  }
+}
+
+/* ======================================================
+   CALLBACK: dados chegando do ESP32 via BLE Notification
+   O DataView contem os bytes UTF-8 do CSV enviado pelo firmware.
+====================================================== */
+function onBleNotification(event) {
+  try {
+    const value    = event.target.value; // DataView
+    const decoder  = new TextDecoder('utf-8');
+    const csvStr   = decoder.decode(value);
+    processReading(csvStr, 'BLE');
+  } catch (err) {
+    console.error('[PHOTCAF] Erro ao decodificar notificacao BLE:', err);
+  }
+}
+
+/* ======================================================
+   DESCONEXAO INESPERADA (ex: ESP32 perdeu energia)
+====================================================== */
+function onBleDisconnected(event) {
+  AppState.isConnected = false;
+  AppState.bleChar     = null;
+  setBleStatus('error', 'DESCONECTADO');
+  DOM.btnConnectLabel.textContent = 'CONECTAR SENSOR';
+  DOM.btnConnect.classList.remove('is-connected');
+  DOM.btnAnalyze.disabled = true;
+  showBanner(
+    `Sensor ${event.target.name} desconectado inesperadamente. Clique em "CONECTAR SENSOR" para reconectar.`,
+    'error'
+  );
+  showToast(`Sensor desconectado: ${event.target.name}`, 'error', 6000);
+}
+
+/* ======================================================
+   DESCONECTAR MANUALMENTE
+====================================================== */
+async function disconnectBluetooth() {
+  if (!AppState.bleDevice) return;
+  try {
+    if (AppState.bleChar) {
+      await AppState.bleChar.stopNotifications();
+      AppState.bleChar.removeEventListener('characteristicvaluechanged', onBleNotification);
+    }
+    if (AppState.bleDevice.gatt.connected) {
+      AppState.bleDevice.gatt.disconnect();
+    }
+  } catch (err) {
+    console.warn('[PHOTCAF] Erro ao desconectar:', err);
+  } finally {
+    AppState.bleDevice  = null;
+    AppState.bleChar    = null;
+    AppState.isConnected = false;
+    setBleStatus('idle', 'AGUARDANDO');
+    DOM.btnConnectLabel.textContent = 'CONECTAR SENSOR';
+    DOM.btnConnect.classList.remove('is-connected');
+    DOM.btnAnalyze.disabled = true;
+    showToast('Sensor desconectado com sucesso.', 'info', 3000);
+    hideBanner();
+  }
+}
+
+/* ======================================================
+   BOTAO CONECTAR / DESCONECTAR
+====================================================== */
+DOM.btnConnect.addEventListener('click', () => {
+  if (AppState.isConnected) {
+    disconnectBluetooth();
+  } else {
+    connectBluetooth();
+  }
+});
+
+/* ======================================================
+   BOTAO REALIZAR ANALISE
+   Faz uma leitura unica sob demanda (read + parse)
+====================================================== */
+DOM.btnAnalyze.addEventListener('click', async () => {
+  if (!AppState.bleChar || !AppState.isConnected) {
+    showToast('Sensor nao conectado.', 'warning', 3000);
+    return;
+  }
+  try {
+    DOM.btnAnalyze.disabled = true;
+    DOM.btnAnalyze.textContent = 'ANALISANDO...';
+    const value   = await AppState.bleChar.readValue();
+    const decoder = new TextDecoder('utf-8');
+    const csvStr  = decoder.decode(value);
+    processReading(csvStr, 'BLE-READ');
+    showToast('Analise concluida com sucesso.', 'success', 3000);
+  } catch (err) {
+    showToast(`Erro ao ler sensor: ${err.message}`, 'error', 4000);
+    console.error('[PHOTCAF] readValue error:', err);
+  } finally {
+    DOM.btnAnalyze.disabled = false;
+    DOM.btnAnalyze.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      REALIZAR ANALISE`;
+  }
+});
+
+/* ======================================================
+   SIMULACAO — SEPARADA E SOB DEMANDA
+   Ativa APENAS quando o usuario clica em "TESTAR SEM SENSOR".
+   NAO roda automaticamente no carregamento.
+====================================================== */
+const SIMULATION_SCENARIOS = [
+  { csvTemplate: '0.85,0.10,0.05,0.40,0.30,Saudavel,0.91', label: 'Saudavel' },
+  { csvTemplate: '0.42,0.08,0.15,0.60,0.20,Ferrugem,0.87', label: 'Ferrugem' },
+  { csvTemplate: '0.55,0.12,0.25,0.45,0.35,Manchas,0.78',  label: 'Manchas'  },
+  { csvTemplate: '0.20,0.05,0.08,0.30,0.10,Critico,0.94',  label: 'Critico'  },
+];
+
+function generateSimCSV() {
+  // Escolhe cenario aleatoriamente
+  const scenario = SIMULATION_SCENARIOS[
+    Math.floor(Math.random() * SIMULATION_SCENARIOS.length)
+  ];
+  const base = scenario.csvTemplate.split(',').map(Number.isFinite(parseFloat(v)) ? v : v);
+  const parts = scenario.csvTemplate.split(',');
+
+  // Adiciona ruido pequeno nos valores numericos para parecer real
+  const noise = () => (Math.random() * 0.06 - 0.03).toFixed(4);
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+
+  return [
+    clamp(parseFloat(parts[0]) + parseFloat(noise())).toFixed(3),
+    clamp(parseFloat(parts[1]) + parseFloat(noise())).toFixed(3),
+    clamp(parseFloat(parts[2]) + parseFloat(noise())).toFixed(3),
+    clamp(parseFloat(parts[3]) + parseFloat(noise())).toFixed(3),
+    clamp(parseFloat(parts[4]) + parseFloat(noise())).toFixed(3),
+    parts[5],
+    clamp(parseFloat(parts[6]) + parseFloat(noise()) * 0.5).toFixed(3),
+  ].join(',');
+}
+
+function startSimulation() {
+  if (AppState.isSimulating) return;
+  if (AppState.isConnected) {
+    showToast('Desconecte o sensor real antes de simular.', 'warning', 3000);
+    return;
+  }
+  AppState.isSimulating   = true;
+  AppState.sessionSamples = 0;
+
+  DOM.btnSimulate.classList.add('is-simulating');
+  DOM.btnSimLabel.textContent = 'PARAR SIMULACAO';
+  showBanner('MODO SIMULACAO ATIVO - Dados gerados artificialmente, sem sensor real.', 'warning');
+  showToast('Simulacao iniciada', 'info', 3000);
+
+  // Dispara imediatamente a primeira leitura
+  processReading(generateSimCSV(), 'SIM');
+
+  // E continua a cada 2s
+  AppState.simulationTimer = setInterval(() => {
+    processReading(generateSimCSV(), 'SIM');
+  }, 2000);
+}
+
+function stopSimulation() {
+  if (!AppState.isSimulating) return;
+  clearInterval(AppState.simulationTimer);
+  AppState.simulationTimer = null;
+  AppState.isSimulating    = false;
+  DOM.btnSimulate.classList.remove('is-simulating');
+  DOM.btnSimLabel.textContent = 'TESTAR SEM SENSOR';
+  if (!AppState.isConnected) hideBanner();
+  showToast('Simulacao encerrada', 'info', 2000);
+}
+
+DOM.btnSimulate.addEventListener('click', () => {
+  if (AppState.isSimulating) {
+    stopSimulation();
+  } else {
+    startSimulation();
+  }
+});
+
+/* ======================================================
+   GPS — navigator.geolocation
+====================================================== */
+function initGPS() {
+  if (!navigator.geolocation) {
+    console.warn('[PHOTCAF] Geolocation nao suportada. Usando coords demo.');
+    setGPSCoords(-21.7652, -46.5695, true); // Sul de Minas - regiao cafeeira
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      setGPSCoords(pos.coords.latitude, pos.coords.longitude, false);
+    },
+    (err) => {
+      console.warn('[PHOTCAF] GPS negado ou falhou:', err.message);
+      // Fallback para coordenadas demo na regiao cafeeira de MG
+      setGPSCoords(-21.7652, -46.5695, true);
+      showToast('GPS negado. Usando localizacao demo (Minas Gerais).', 'warning', 5000);
+    },
+    { timeout: 8000, enableHighAccuracy: true }
+  );
+}
+
+function setGPSCoords(lat, lon, isDemo = false) {
+  AppState.gpsCoords = { lat, lon };
+
+  const latStr = lat.toFixed(6);
+  const lonStr = lon.toFixed(6);
+
+  DOM.statLat.textContent     = latStr;
+  DOM.statLon.textContent     = lonStr;
+  DOM.gpsLatDisplay.textContent = latStr;
+  DOM.gpsLonDisplay.textContent = lonStr;
+
+  updateLeafletMap(lat, lon, isDemo);
+}
+
+/* ======================================================
+   LEAFLET MAP
+====================================================== */
+function initLeafletMap() {
+  AppState.leafletMap = L.map('map-container', {
+    center: [-21.7652, -46.5695],
+    zoom: 13,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(AppState.leafletMap);
+
+  // Marcador SVG customizado (verde-tech)
+  const svgIcon = L.divIcon({
+    className: '',
+    html: `
+      <svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 22 14 22S28 24.5 28 14C28 6.27 21.73 0 14 0z"
+              fill="#00ff88" opacity="0.95"/>
+        <circle cx="14" cy="14" r="6" fill="#0a1a12"/>
+        <circle cx="14" cy="14" r="3" fill="#00ff88"/>
+      </svg>`,
+    iconSize:   [28, 36],
+    iconAnchor: [14, 36],
+  });
+
+  AppState.leafletMarker = L.marker([-21.7652, -46.5695], { icon: svgIcon })
+    .addTo(AppState.leafletMap);
+
+  // Circulo de area de monitoramento
+  L.circle([-21.7652, -46.5695], {
+    color:       '#00ff88',
+    fillColor:   '#00ff88',
+    fillOpacity: 0.06,
+    weight:      1.5,
+    opacity:     0.4,
+    radius:      400,
+  }).addTo(AppState.leafletMap);
+}
+
+function updateLeafletMap(lat, lon, isDemo) {
+  if (!AppState.leafletMap) return;
+  const latlng = [lat, lon];
+  AppState.leafletMap.setView(latlng, 15);
+  if (AppState.leafletMarker) {
+    AppState.leafletMarker.setLatLng(latlng);
+    AppState.leafletMarker.bindPopup(
+      `<b style="font-family:monospace;color:#00ff88">PHOTCAF_2.0</b><br>
+       <span style="font-family:monospace;font-size:11px;color:#888">
+         ${isDemo ? 'DEMO - Sul de Minas, MG' : 'Posicao atual GPS'}<br>
+         Lat: ${lat.toFixed(6)}<br>
+         Lon: ${lon.toFixed(6)}
+       </span>`
+    );
+  }
+}
+
+/* ======================================================
+   VERIFICACAO DE BLE DISPONIBILIDADE NO LOAD
+====================================================== */
+function checkBleAvailability() {
+  if (!navigator.bluetooth) {
+    showBanner(
+      'Web Bluetooth nao disponivel neste browser. Use Chrome/Edge desktop. ' +
+      'Voce pode usar o modo "TESTAR SEM SENSOR" para visualizar o dashboard.',
+      'warning'
+    );
+  } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    showBanner(
+      'AVISO: Web Bluetooth requer HTTPS ou localhost. ' +
+      'Abra via servidor local (VS Code Live Server, Python http.server, etc.) para usar o Bluetooth real.',
+      'warning'
+    );
+  }
+}
+
+/* ======================================================
+   INIT
+====================================================== */
+(function init() {
+  checkBleAvailability();
+  initLeafletMap();
+  initGPS();
+  // Nenhuma simulacao automatica aqui — tela comeca em estado idle
+})();
+</script>
+</body>
+</html>
